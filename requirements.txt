@@ -1,2 +1,3 @@
 pycparser-fake-libc
 pycparser
+pyyaml

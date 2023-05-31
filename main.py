@@ -3,10 +3,13 @@
 # - libclang python bindings
 # . https://stackoverflow.com/questions/36808565/using-libclang-to-parse-in-c-in-python
 # - https://pypi.org/project/libclang/
-
+import json
 import os
 import sys
+
+import yaml as yaml
 from pycparser import parse_file, c_ast
+import pycparser
 
 import pycparser_fake_libc
 
@@ -69,11 +72,11 @@ class TypeVisitor(BaseNodeVisitor):
 
     def visit_Union(self, node):
         print("==> union", node)
-        raise Exception("Union not supported")
+        #raise Exception("Union not supported")
 
     def visit_Enum(self, node):
         print("==> enum", node)
-        raise Exception("Enum not supported")
+        #raise Exception("Enum not supported")
 
     def visit_Typedef(self, node):
         if not self.is_defined_here(node):
@@ -96,6 +99,10 @@ class TypeVisitor(BaseNodeVisitor):
 
         def visit_Struct(self, node):
             print("==> struct", node)
+            if node.decls is None:
+                print("Node with decls None")
+                return
+
             for dcl in node.decls:
                 name = dcl.name
                 type = None
@@ -163,8 +170,17 @@ class ExternalFunctionVisitor(c_ast.NodeVisitor):
 
 
 def get_all_c_files(input_folder):
+    ignore = [
+        "src/Applications/SipAddon/CEVT_xDM/Appl/Swc/HBrM",
+        #"src/Applications/SipAddon/CEVT_xDM/Appl/Swc/VCfg", # Because it works only on windows...
+        #"src/Applications/SipAddon/CEVT_xDM/Appl/Swc/CarM" # Because it works only on windows...
+    ]
+
     for (dirpath, dirnames, filenames) in os.walk(input_folder, topdown=True, followlinks=False):
         for filename in filenames:
+            if any([i in dirpath for i in ignore]):
+                continue
+
             if filename.endswith(".c") or filename.endswith(".h"):
                 yield os.path.join(dirpath, filename)
 
@@ -174,27 +190,33 @@ class MyEncoder(JSONEncoder):
     def default(self, obj):
         return obj.__dict__
 
-def process_all_c_files(folder):
+def process_all_c_files(folder, includes: list):
     all_symbols = []
     for c_file in get_all_c_files(folder):
         print("Processing %s" % c_file)
-        c_file_obj = process_file(c_file)
+        c_file_obj = process_file(c_file, includes)
         all_symbols.append(c_file_obj)
 
-    # serialize all_symbols to a file as json
-    # https://stackoverflow.com/questions/12309269/how-do-i-write-json-data-to-a-file
-    import json
-    with open('/tmp/data.json', 'w', encoding='utf-8') as f:
-        json.dump(all_symbols, f, cls=MyEncoder, ensure_ascii=False, indent=4)
+    return all_symbols
 
-
-def process_file(filename):
+def process_file(filename, includes):
     fake_libc_arg = ["-I" + pycparser_fake_libc.directory]
-    # You can add more -I here as part of the list
+    libs = ["-I" + lib for lib in includes]
+    all_libs = fake_libc_arg + libs
 
-    ast = parse_file(filename, use_cpp=True,
-                     cpp_path='cpp',
-                     cpp_args=fake_libc_arg)
+    #more_args = ["-DMICROSAR_DISABLE_MEMMAP"]
+    more_args = ["-DUNIT_TESTING", "-DDEBUG", "-DCPU_S32K148HAT0MLLT", "-DRTE_PTR2ARRAYBASETYPE_PASSING", "-DCPU_S32K148HAT0MLLT"]
+
+    all_args = all_libs + more_args
+
+    try:
+        ast = parse_file(filename, use_cpp=True,
+                         cpp_path='cpp',
+                         cpp_args=all_args)
+    except pycparser.plyparser.ParseError:
+        print("Error!")
+        return CFile(filename, [], [], [])
+    
     # r'-Iutils/fake_libc_include'
     # ast.show()
     v = FuncDefVisitor(filename)
@@ -211,10 +233,23 @@ def process_file(filename):
     # ast.show()
     return CFile(filename, local_functions, global_variables, type_visitor.types)
 
-def main(folder):
-    process_all_c_files(folder)
+def main(folder, sources, includes):
+    all_symbols = []
+    if len(sources) == 0:
+        symbols = process_all_c_files(folder, includes)
+        all_symbols.extend(symbols)
+    else:
+        for src in sources:
+            symbols = process_all_c_files(os.path.join(folder, src), includes)
+            all_symbols.extend(symbols)
+
+    # serialize all_symbols to a file as json
+    import json
+    with open('/tmp/data.json', 'w', encoding='utf-8') as f:
+        json.dump(all_symbols, f, cls=MyEncoder, ensure_ascii=False, indent=4)
 
 
 if __name__ == '__main__':
     file = sys.argv[1]
-    main(file)
+    conf = yaml.load(open(sys.argv[2]), Loader=yaml.FullLoader)
+    main(file, conf["sources"], conf["includes"])
