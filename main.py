@@ -12,45 +12,8 @@ from pycparser import parse_file, c_ast
 import pycparser
 
 import pycparser_fake_libc
-
-
-class CFile:
-    def __init__(self, filename, functions, global_variables, types):
-        self.filename = filename
-        self.functions = functions
-        self.global_variables = global_variables
-        self.types = types
-
-class Variable:
-    def __init__(self, name, type):
-        self.name = name
-        self.type = type
-
-    def __repr__(self):
-        return "Variable(name=%s, type=%s)" % (self.name, self.type)
-
-
-class Function:
-    def __init__(self, name, type, parameters):
-        self.name = name
-        self.type = type
-        self.parameters = parameters
-
-
-class Parameter(Variable):
-    def __init__(self, name, type):
-        super().__init__(name, type)
-
-class Field(Variable):
-    def __init__(self, name, type):
-        super().__init__(name, type)
-
-class StructType:
-    def __init__(self, name, fields):
-        self.name = name
-        self.fields = fields
-
-# ast = pycparser.parse_file("c_file_to_parse.c", use_cpp=True, cpp_args=fake_libc_arg)
+import db
+from model import *
 
 class BaseNodeVisitor(c_ast.NodeVisitor):
     def __init__(self, filename):
@@ -58,6 +21,7 @@ class BaseNodeVisitor(c_ast.NodeVisitor):
 
     def is_defined_here(self, node):
         return node.coord.file == self.filename
+
 
 class TypeVisitor(BaseNodeVisitor):
 
@@ -72,17 +36,17 @@ class TypeVisitor(BaseNodeVisitor):
 
     def visit_Union(self, node):
         print("==> union", node)
-        #raise Exception("Union not supported")
+        # raise Exception("Union not supported")
 
     def visit_Enum(self, node):
         print("==> enum", node)
-        #raise Exception("Enum not supported")
+        # raise Exception("Enum not supported")
 
     def visit_Typedef(self, node):
         if not self.is_defined_here(node):
             return
 
-        #print("==> typedef", node)
+        # print("==> typedef", node)
         name = node.name
         visitor = TypeVisitor.StructVisitor(name)
         visitor.visit(node.type)
@@ -122,8 +86,8 @@ class FuncDefVisitor(BaseNodeVisitor):
         print("==> func def", node)
         # if node.coord.file == self.filename
         # I think this is not needed
-        #self.functions.append(node)
-        self.functions.append(Function(node.decl.name, None, None)) #, node.decl.type, node.decl.type.args.params))
+        # self.functions.append(node)
+        self.functions.append(Function(node.decl.name, None, None))  # , node.decl.type, node.decl.type.args.params))
         # node.storage
         print('%s at %s' % (node.decl.name, node.decl.coord))
         print(type(node.decl.coord))
@@ -132,7 +96,7 @@ class FuncDefVisitor(BaseNodeVisitor):
         if node.coord.file != self.filename:
             return
 
-        #print("==> typedef", node)
+        # print("==> typedef", node)
 
     def visit_Decl(self, node):
         print("==> dcl", node)
@@ -172,8 +136,8 @@ class ExternalFunctionVisitor(c_ast.NodeVisitor):
 def get_all_c_files(input_folder):
     ignore = [
         "src/Applications/SipAddon/CEVT_xDM/Appl/Swc/HBrM",
-        #"src/Applications/SipAddon/CEVT_xDM/Appl/Swc/VCfg", # Because it works only on windows...
-        #"src/Applications/SipAddon/CEVT_xDM/Appl/Swc/CarM" # Because it works only on windows...
+        # "src/Applications/SipAddon/CEVT_xDM/Appl/Swc/VCfg", # Because it works only on windows...
+        # "src/Applications/SipAddon/CEVT_xDM/Appl/Swc/CarM" # Because it works only on windows...
     ]
 
     for (dirpath, dirnames, filenames) in os.walk(input_folder, topdown=True, followlinks=False):
@@ -186,26 +150,31 @@ def get_all_c_files(input_folder):
 
 
 from json import JSONEncoder
+
+
 class MyEncoder(JSONEncoder):
     def default(self, obj):
         return obj.__dict__
 
+
 def process_all_c_files(folder, includes: list):
-    all_symbols = []
+    c_files = []
     for c_file in get_all_c_files(folder):
         print("Processing %s" % c_file)
         c_file_obj = process_file(c_file, includes)
-        all_symbols.append(c_file_obj)
+        c_files.append(c_file_obj)
 
-    return all_symbols
+    return c_files
+
 
 def process_file(filename, includes):
     fake_libc_arg = ["-I" + pycparser_fake_libc.directory]
     libs = ["-I" + lib for lib in includes]
     all_libs = fake_libc_arg + libs
 
-    #more_args = ["-DMICROSAR_DISABLE_MEMMAP"]
-    more_args = ["-DUNIT_TESTING", "-DDEBUG", "-DCPU_S32K148HAT0MLLT", "-DRTE_PTR2ARRAYBASETYPE_PASSING", "-DCPU_S32K148HAT0MLLT"]
+    # more_args = ["-DMICROSAR_DISABLE_MEMMAP"]
+    more_args = ["-DUNIT_TESTING", "-DDEBUG", "-DCPU_S32K148HAT0MLLT", "-DRTE_PTR2ARRAYBASETYPE_PASSING",
+                 "-DCPU_S32K148HAT0MLLT"]
 
     all_args = all_libs + more_args
 
@@ -216,7 +185,7 @@ def process_file(filename, includes):
     except pycparser.plyparser.ParseError:
         print("Error!")
         return CFile(filename, [], [], [])
-    
+
     # r'-Iutils/fake_libc_include'
     # ast.show()
     v = FuncDefVisitor(filename)
@@ -233,23 +202,30 @@ def process_file(filename, includes):
     # ast.show()
     return CFile(filename, local_functions, global_variables, type_visitor.types)
 
+
 def main(folder, sources, includes):
-    all_symbols = []
+    all_c_files = []
     if len(sources) == 0:
-        symbols = process_all_c_files(folder, includes)
-        all_symbols.extend(symbols)
+        c_files = process_all_c_files(folder, includes)
+        all_c_files.extend(c_files)
     else:
         for src in sources:
-            symbols = process_all_c_files(os.path.join(folder, src), includes)
-            all_symbols.extend(symbols)
+            c_files = process_all_c_files(os.path.join(folder, src), includes)
+            all_c_files.extend(c_files)
 
-    # serialize all_symbols to a file as json
+    catalogue = ProjectCatalogue(all_c_files)
+
+    dump("/tmp/data.json", catalogue)
+    db.dump("/tmp/data.db", catalogue)
+
+def dump(filename, all_symbols):
     import json
-    with open('/tmp/data.json', 'w', encoding='utf-8') as f:
+    with open(filename, 'w', encoding='utf-8') as f:
         json.dump(all_symbols, f, cls=MyEncoder, ensure_ascii=False, indent=4)
 
 
 if __name__ == '__main__':
     file = sys.argv[1]
     conf = yaml.load(open(sys.argv[2]), Loader=yaml.FullLoader)
-    main(file, conf["sources"], conf["includes"])
+    includes = conf["includes"] if "includes" in conf else []
+    main(file, conf["sources"], includes)
