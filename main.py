@@ -78,6 +78,7 @@ class FuncDefVisitor(BaseNodeVisitor):
         super().__init__(filename)
         self.global_variables = []
         self.functions = []
+        self.all_dependencies = []
 
     def visit_FuncCall(self, node):
         print("==> func call", node)
@@ -99,20 +100,32 @@ class FuncDefVisitor(BaseNodeVisitor):
         # print("==> typedef", node)
 
     def visit_Decl(self, node):
-        print("==> dcl", node)
+        #print("==> dcl", node)
 
         if self.is_defined_here(node):
+            dcl = self.create_declaration(node)
             if isinstance(node.type, c_ast.TypeDecl):
-                name = node.name
-                type_name = node.type.type.names[0]
-                if len(node.type.type.names) != 1:
-                    raise Exception("Unspported number of type names")
-
-                self.global_variables.append(Variable(name, type_name))
+                self.global_variables.append(dcl)
             elif isinstance(node.type, c_ast.FuncDecl):
-                # This is what we get in .h files. Details are in .type
-                f = Function(node.name, None, None)
-                self.functions.append(f)
+                self.functions.append(dcl)
+        else:
+            dcl = self.create_declaration(node)
+            self.all_dependencies.append(dcl)
+
+    def create_declaration(self, node):
+        if isinstance(node.type, c_ast.TypeDecl):
+            name = node.name
+            type_name = node.type.type.names[0]
+            if len(node.type.type.names) != 1:
+                raise Exception("Unspported number of type names")
+
+            return Variable(name, type_name)
+        elif isinstance(node.type, c_ast.FuncDecl):
+            # This is what we get in .h files. Details are in .type
+            f = Function(node.name, None, None)
+            return f
+        else:
+            raise Exception("Unsupported declaration type")
 
 
 class ExternalFunctionVisitor(c_ast.NodeVisitor):
