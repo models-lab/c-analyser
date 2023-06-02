@@ -15,6 +15,7 @@ import pycparser_fake_libc
 import db
 from model import *
 
+
 class BaseNodeVisitor(c_ast.NodeVisitor):
     def __init__(self, filename):
         self.filename = filename
@@ -77,37 +78,33 @@ class FuncDefVisitor(BaseNodeVisitor):
     def __init__(self, filename):
         super().__init__(filename)
         self.global_variables = []
-        self.functions = []
+        self.declared_functions = []
+        self.defined_functions = []
         self.all_dependencies = []
 
     def visit_FuncCall(self, node):
         print("==> func call", node)
 
     def visit_FuncDef(self, node):
-        print("==> func def", node)
-        # if node.coord.file == self.filename
-        # I think this is not needed
-        # self.functions.append(node)
-        self.functions.append(Function(node.decl.name, None, None))  # , node.decl.type, node.decl.type.args.params))
-        # node.storage
-        print('%s at %s' % (node.decl.name, node.decl.coord))
-        print(type(node.decl.coord))
+        if not self.is_defined_here(node):
+            return
+
+        # Since definitions are after declarations, we can remove a declaration from external dependencies
+        # if we find its definition
+        self.all_dependencies = [dcl for dcl in self.all_dependencies if dcl.name != node.decl.name]
+        self.defined_functions.append(Function(node.decl.name, None, None))  # , node.decl.type, node.decl.type.args.params))
 
     def visit_Typedef(self, node):
         if node.coord.file != self.filename:
             return
 
-        # print("==> typedef", node)
-
     def visit_Decl(self, node):
-        #print("==> dcl", node)
-
         if self.is_defined_here(node):
             dcl = self.create_declaration(node)
             if isinstance(node.type, c_ast.TypeDecl):
                 self.global_variables.append(dcl)
             elif isinstance(node.type, c_ast.FuncDecl):
-                self.functions.append(dcl)
+                self.declared_functions.append(dcl)
         else:
             dcl = self.create_declaration(node)
             self.all_dependencies.append(dcl)
@@ -128,22 +125,26 @@ class FuncDefVisitor(BaseNodeVisitor):
             raise Exception("Unsupported declaration type")
 
 
-class ExternalFunctionVisitor(c_ast.NodeVisitor):
+class UsedExternalElementVisitor(c_ast.NodeVisitor):
+    """
+    This visitor is used to find all the external elements that are used inside a module
+    """
 
-    def __init__(self, local_functions):
-        self.local_functions = local_functions
-        self.external_functions_names = []
+    def __init__(self, c_file: CFile):
+        self.c_file = c_file
 
     def visit_FuncCall(self, node):
         function_name = node.name.name
-        if not self.is_locally_defined(function_name):
-            self.external_functions_names.append(function_name)
+        self.c_file.add_used_function(function_name)
 
-    def is_locally_defined(self, function_name):
-        for function in self.local_functions:
-            if function.name == function_name:
-                return True
-        return False
+    #    if not self.is_locally_defined(function_name):
+    #        self.external_functions_names.append(function_name)
+
+    #def is_locally_defined(self, function_name):
+    #    for function in self.local_functions:
+    #        if function.name == function_name:
+    #            return True
+    #    return False
 
 
 def get_all_c_files(input_folder):
@@ -167,6 +168,9 @@ from json import JSONEncoder
 
 class MyEncoder(JSONEncoder):
     def default(self, obj):
+        # check if object respond to a method
+        if hasattr(obj, 'to_json'):
+            return obj.to_json()
         return obj.__dict__
 
 
@@ -204,16 +208,21 @@ def process_file(filename, includes):
     v = FuncDefVisitor(filename)
     v.visit(ast)
     global_variables = v.global_variables
-    local_functions = v.functions
+    defined_local_functions = v.defined_functions
+    declared_local_functions = v.declared_functions
 
     type_visitor = TypeVisitor(filename)
     type_visitor.visit(ast)
 
-    v = ExternalFunctionVisitor(local_functions)
+    symbols_set = Symbols(declared_local_functions, defined_local_functions, global_variables, type_visitor.types)
+    dependency_set = DependencySet(v.all_dependencies)
+    c_file = CFile(filename, symbols_set, dependency_set)
+
+    v = UsedExternalElementVisitor(c_file)
     v.visit(ast)
 
     # ast.show()
-    return CFile(filename, local_functions, global_variables, type_visitor.types)
+    return c_file
 
 
 def main(folder, sources, includes):
@@ -229,7 +238,8 @@ def main(folder, sources, includes):
     catalogue = ProjectCatalogue(all_c_files)
 
     dump("/tmp/data.json", catalogue)
-    db.dump("/tmp/data.db", catalogue)
+    #db.dump("/tmp/data.db", catalogue)
+
 
 def dump(filename, all_symbols):
     import json
