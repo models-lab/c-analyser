@@ -5,6 +5,7 @@ class Variable:
     def __init__(self, name, type):
         self.name = name
         self.type = type
+        assert self.type is None or isinstance(self.type, str)
 
     def __repr__(self):
         return "Variable(name=%s, type=%s)" % (self.name, self.type)
@@ -15,16 +16,18 @@ class Function:
         self.name = name
         self.type = type
         self.parameters = parameters
+        assert isinstance(self.name, str)
 
 
 class Parameter(Variable):
     def __init__(self, name, type):
         super().__init__(name, type)
-
+        assert isinstance(self.name, str)
 
 class Field(Variable):
     def __init__(self, name, type):
         super().__init__(name, type)
+        assert isinstance(self.name, str)
 
 
 class StructType:
@@ -33,6 +36,7 @@ class StructType:
     def __init__(self, name, fields):
         self.name = name
         self.fields = fields
+        assert isinstance(self.name, str)
 
 
 # The symbols that are globally visible in a file
@@ -62,7 +66,8 @@ class DependencySet:
     def __repr__(self):
         return "DependencySet(dependencies=%s)" % (self.dependencies)
 
-    def add_used_function(self, function_name):
+    def add_used_function(self, function_name: str):
+        assert isinstance(function_name, str)
         self.used_dependencies.add(function_name)
 
 

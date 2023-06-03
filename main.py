@@ -114,15 +114,27 @@ class FuncDefVisitor(BaseNodeVisitor):
             name = node.name
             type_name = node.type.type.names[0]
             if len(node.type.type.names) != 1:
-                raise Exception("Unspported number of type names")
+                raise Exception("Unuspported number of type names")
 
             return Variable(name, type_name)
         elif isinstance(node.type, c_ast.FuncDecl):
             # This is what we get in .h files. Details are in .type
             f = Function(node.name, None, None)
             return f
+        elif isinstance(node.type, c_ast.ArrayDecl):
+            v = Variable(node.name, None) # TODO: Set the type
+            return v
+        elif isinstance(node.type, c_ast.PtrDecl):
+            v = Variable(node.name, None)  # TODO: Set the type
+            return v
+        elif isinstance(node.type, c_ast.Enum):
+            v = Variable(node.name, None)  # TODO: Set the type
+            return v
+        elif isinstance(node.type, c_ast.Struct):
+            v = Variable(node.name, None)  # TODO: Set the type
+            return v
         else:
-            raise Exception("Unsupported declaration type")
+            raise Exception("Unsupported declaration type", node)
 
 
 class UsedExternalElementVisitor(c_ast.NodeVisitor):
@@ -134,7 +146,12 @@ class UsedExternalElementVisitor(c_ast.NodeVisitor):
         self.c_file = c_file
 
     def visit_FuncCall(self, node):
+        # This means that it is likely a call to a function pointer
+        if not isinstance(node.name, c_ast.ID):
+            return
+
         function_name = node.name.name
+        assert isinstance(function_name, str)
         self.c_file.add_used_function(function_name)
 
     #    if not self.is_locally_defined(function_name):
@@ -200,8 +217,11 @@ def process_file(filename, includes):
                          cpp_path='cpp',
                          cpp_args=all_args)
     except pycparser.plyparser.ParseError:
-        print("Error!")
-        return CFile(filename, [], [], [])
+        print("Error! Could not parse file %s" % filename)
+        symbols_set = Symbols([], [], [], [])
+        dependency_set = DependencySet([])
+        # TODO: Mark as error
+        return CFile(filename, symbols_set, dependency_set)
 
     # r'-Iutils/fake_libc_include'
     # ast.show()
