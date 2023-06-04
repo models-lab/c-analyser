@@ -75,15 +75,9 @@ class TypeVisitor(BaseNodeVisitor):
 
 
 class FuncDefVisitor(BaseNodeVisitor):
-    def __init__(self, filename):
+    def __init__(self, filename, c_file: CFile):
         super().__init__(filename)
-        self.global_variables = []
-        self.declared_functions = []
-        self.defined_functions = []
-        self.all_dependencies = []
-
-    def visit_FuncCall(self, node):
-        print("==> func call", node)
+        self.c_file = c_file
 
     def visit_FuncDef(self, node):
         if not self.is_defined_here(node):
@@ -91,8 +85,10 @@ class FuncDefVisitor(BaseNodeVisitor):
 
         # Since definitions are after declarations, we can remove a declaration from external dependencies
         # if we find its definition
-        self.all_dependencies = [dcl for dcl in self.all_dependencies if dcl.name != node.decl.name]
-        self.defined_functions.append(Function(node.decl.name, None, None))  # , node.decl.type, node.decl.type.args.params))
+        self.c_file.dependencies.remove_dependency(node.decl.name)
+        f = Function(node.decl.name, None, None)
+        self.c_file.symbols.add_defined_function(f)
+        UsedExternalElementVisitor(f).visit(node)
 
     def visit_Typedef(self, node):
         if node.coord.file != self.filename:
@@ -102,12 +98,12 @@ class FuncDefVisitor(BaseNodeVisitor):
         if self.is_defined_here(node):
             dcl = self.create_declaration(node)
             if isinstance(node.type, c_ast.TypeDecl):
-                self.global_variables.append(dcl)
+                self.c_file.symbols.add_variable(dcl)
             elif isinstance(node.type, c_ast.FuncDecl):
-                self.declared_functions.append(dcl)
+                self.c_file.symbols.add_declared_function(dcl)
         else:
             dcl = self.create_declaration(node)
-            self.all_dependencies.append(dcl)
+            self.c_file.dependencies.add_dependency(dcl)
 
     def create_declaration(self, node):
         if isinstance(node.type, c_ast.TypeDecl):
@@ -142,8 +138,8 @@ class UsedExternalElementVisitor(c_ast.NodeVisitor):
     This visitor is used to find all the external elements that are used inside a module
     """
 
-    def __init__(self, c_file: CFile):
-        self.c_file = c_file
+    def __init__(self, scope: WithDependencies):
+        self.scope = scope
 
     def visit_FuncCall(self, node):
         # This means that it is likely a call to a function pointer
@@ -152,16 +148,7 @@ class UsedExternalElementVisitor(c_ast.NodeVisitor):
 
         function_name = node.name.name
         assert isinstance(function_name, str)
-        self.c_file.add_used_function(function_name)
-
-    #    if not self.is_locally_defined(function_name):
-    #        self.external_functions_names.append(function_name)
-
-    #def is_locally_defined(self, function_name):
-    #    for function in self.local_functions:
-    #        if function.name == function_name:
-    #            return True
-    #    return False
+        self.scope.add_used_function(function_name)
 
 
 def get_all_c_files(input_folder):
@@ -221,22 +208,24 @@ def process_file(filename, includes):
         symbols_set = Symbols([], [], [], [])
         dependency_set = DependencySet([])
         # TODO: Mark as error
-        return CFile(filename, symbols_set, dependency_set)
+        return CFile(filename)
 
     # r'-Iutils/fake_libc_include'
     # ast.show()
-    v = FuncDefVisitor(filename)
+
+    #symbols_set = Symbols(declared_local_functions, defined_local_functions, global_variables, type_visitor.types)
+    #dependency_set = DependencySet(v.all_dependencies)
+    c_file = CFile(filename) #, symbols_set, dependency_set)
+
+
+    v = FuncDefVisitor(filename, c_file)
     v.visit(ast)
-    global_variables = v.global_variables
-    defined_local_functions = v.defined_functions
-    declared_local_functions = v.declared_functions
+    #global_variables = v.global_variables
+    #defined_local_functions = v.defined_functions
+    #declared_local_functions = v.declared_functions
 
     type_visitor = TypeVisitor(filename)
     type_visitor.visit(ast)
-
-    symbols_set = Symbols(declared_local_functions, defined_local_functions, global_variables, type_visitor.types)
-    dependency_set = DependencySet(v.all_dependencies)
-    c_file = CFile(filename, symbols_set, dependency_set)
 
     v = UsedExternalElementVisitor(c_file)
     v.visit(ast)

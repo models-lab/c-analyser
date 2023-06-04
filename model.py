@@ -1,6 +1,16 @@
 from typing import List
 
 
+class WithDependencies:
+    def __init__(self, symbols, dependencies):
+        self.symbols = symbols
+        self.dependencies = dependencies
+
+    def add_used_function(self, function_name):
+        if not self.symbols.has_function(function_name):
+            self.dependencies.add_used_function(function_name)
+
+
 class Variable:
     def __init__(self, name, type):
         self.name = name
@@ -11,18 +21,29 @@ class Variable:
         return "Variable(name=%s, type=%s)" % (self.name, self.type)
 
 
-class Function:
+class Function(WithDependencies):
     def __init__(self, name, type, parameters):
+        super().__init__(symbols=Symbols(), dependencies=DependencySet())
         self.name = name
         self.type = type
         self.parameters = parameters
         assert isinstance(self.name, str)
+
+    def to_json(self):
+        # TODO: Distinguish between declared and defined functions because declared functions do not have used dependencies
+        return {
+            "name": self.name,
+            "type": self.type,
+            "parameters": self.parameters,
+            "used_dependencies": list(self.dependencies.used_dependencies),
+        }
 
 
 class Parameter(Variable):
     def __init__(self, name, type):
         super().__init__(name, type)
         assert isinstance(self.name, str)
+
 
 class Field(Variable):
     def __init__(self, name, type):
@@ -39,13 +60,25 @@ class StructType:
         assert isinstance(self.name, str)
 
 
-# The symbols that are globally visible in a file
+# The symbols that are declared in a certain module
 class Symbols:
-    def __init__(self, declared_functions: List[Function], defined_local_functions: List[Function], global_variables, types):
-        self.declared_functions = declared_functions
-        self.defined_functions = defined_local_functions
-        self.global_variables = global_variables
-        self.types = types
+    def __init__(self):
+        self.declared_functions = []
+        self.defined_functions = []
+        self.variables = []
+        self.types = []
+
+    def add_declared_function(self, function):
+        self.declared_functions.append(function)
+
+    def add_defined_function(self, function):
+        self.defined_functions.append(function)
+
+    def add_variable(self, variable):
+        self.variables.append(variable)
+
+    def add_type(self, type):
+        self.types.append(type)
 
     def has_function(self, function_name):
         for function in (self.defined_functions + self.declared_functions):
@@ -55,9 +88,15 @@ class Symbols:
 
 
 class DependencySet:
-    def __init__(self, all_dependencies):
-        self.all_dependencies = all_dependencies
+    def __init__(self):
+        self.all_dependencies = []
         self.used_dependencies = set()
+
+    def add_dependency(self, dependency):
+        self.all_dependencies.append(dependency)
+
+    def remove_dependency(self, name):
+        self.all_dependencies = [dcl for dcl in self.all_dependencies if dcl.name != name]
 
     def to_json(self):
         unused_dependencies = [dep.name for dep in self.all_dependencies if dep.name not in self.used_dependencies]
@@ -71,15 +110,10 @@ class DependencySet:
         self.used_dependencies.add(function_name)
 
 
-class CFile:
-    def __init__(self, filename, symbols: Symbols, dependencies: DependencySet):
+class CFile(WithDependencies):
+    def __init__(self, filename):
+        super().__init__(Symbols(), DependencySet())
         self.filename = filename
-        self.symbols = symbols
-        self.dependencies = dependencies
-
-    def add_used_function(self, function_name):
-        if not self.symbols.has_function(function_name):
-            self.dependencies.add_used_function(function_name)
 
 
 class ProjectCatalogue:
