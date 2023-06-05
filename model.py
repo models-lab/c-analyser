@@ -80,6 +80,9 @@ class Symbols:
     def add_type(self, type):
         self.types.append(type)
 
+    def all_functions(self):
+        return self.defined_functions + self.declared_functions
+
     def has_function(self, function_name):
         for function in (self.defined_functions + self.declared_functions):
             if function.name == function_name:

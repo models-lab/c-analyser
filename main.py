@@ -247,7 +247,7 @@ def main(folder, sources, includes):
     catalogue = ProjectCatalogue(all_c_files)
 
     dump("/tmp/data.json", catalogue)
-    #db.dump("/tmp/data.db", catalogue)
+    db.dump("/tmp/data.db", catalogue)
 
 
 def dump(filename, all_symbols):
