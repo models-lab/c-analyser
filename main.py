@@ -14,7 +14,7 @@ import pycparser
 import pycparser_fake_libc
 import db
 from model import *
-
+import argparse
 
 class BaseNodeVisitor(c_ast.NodeVisitor):
     def __init__(self, filename):
@@ -194,8 +194,11 @@ def process_file(filename, includes):
     all_libs = fake_libc_arg + libs
 
     # more_args = ["-DMICROSAR_DISABLE_MEMMAP"]
-    more_args = ["-DUNIT_TESTING", "-DDEBUG", "-DCPU_S32K148HAT0MLLT", "-DRTE_PTR2ARRAYBASETYPE_PASSING",
-                 "-DCPU_S32K148HAT0MLLT"]
+    #more_args = ["-DUNIT_TESTING", "-DDEBUG", "-DCPU_S32K148HAT0MLLT", "-DRTE_PTR2ARRAYBASETYPE_PASSING",
+    #             "-DCPU_S32K148HAT0MLLT"]
+    # TODO: Pass this as part of the configuration given in main
+    more_args = []
+
 
     all_args = all_libs + more_args
 
@@ -234,7 +237,10 @@ def process_file(filename, includes):
     return c_file
 
 
-def main(folder, sources, includes):
+def main(folder, args, conf):
+    sources = conf["sources"]
+    includes = conf["includes"] if "includes" in conf else []
+    
     all_c_files = []
     if len(sources) == 0:
         c_files = process_all_c_files(folder, includes)
@@ -246,8 +252,10 @@ def main(folder, sources, includes):
 
     catalogue = ProjectCatalogue(all_c_files)
 
-    dump("/tmp/data.json", catalogue)
-    db.dump("/tmp/data.db", catalogue)
+    if args.output_json:
+        dump(args.output_json, catalogue)
+    if args.output:
+        db.dump(args.output, catalogue)
 
 
 def dump(filename, all_symbols):
@@ -257,7 +265,18 @@ def dump(filename, all_symbols):
 
 
 if __name__ == '__main__':
-    file = sys.argv[1]
-    conf = yaml.load(open(sys.argv[2]), Loader=yaml.FullLoader)
-    includes = conf["includes"] if "includes" in conf else []
-    main(file, conf["sources"], includes)
+    # Parse with arpgarse. option 1: input folder, option 2: configuration file (--config), option 3: output file
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument('folder', help='The folder where the sources are located')
+    argparser.add_argument('--config', help='The configuration file')
+    argparser.add_argument('--output', help='The output file')
+    argparser.add_argument('--output-json', required=False, help='The output file')
+
+    args = argparser.parse_args()
+
+    file = args.folder
+    with open(args.config) as f:
+        conf = yaml.load(f, Loader=yaml.FullLoader)
+    
+    main(file, args, conf)
+
