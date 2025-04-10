@@ -208,8 +208,8 @@ def process_file(filename, includes):
                          cpp_args=all_args)
     except pycparser.plyparser.ParseError:
         print("Error! Could not parse file %s" % filename)
-        symbols_set = Symbols([], [], [], [])
-        dependency_set = DependencySet([])
+        #symbols_set = Symbols([], [], [], [])
+        #dependency_set = DependencySet([])
         # TODO: Mark as error
         return CFile(filename)
 
